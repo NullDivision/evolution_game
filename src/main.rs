@@ -7,18 +7,29 @@ struct Score(i32);
 
 // Velocity component
 #[derive(Component)]
-struct Velocity {
-    x: f32,
-    y: f32,
-    x_max: f32,
-    y_max: f32,
+struct Movement {
+    signum_x: i8,
+    signum_y: i8,
+    velocity_x: f32,
+    velocity_y: f32,
+    velocity_x_max: f32,
+    velocity_y_max: f32,
 }
+
+const MAX_ENTITIES: usize = 500;
+const MAX_VELOCITY: f32 = 10.;
 
 fn game_startup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
+    window: Query<&Window>,
 ) {
+    let mut rng = rand::thread_rng();
+    let main_window = window.single();
+    let window_half_width = main_window.width() / 2.;
+    let window_half_height = main_window.height() / 2.;
+
     commands.spawn(Camera2dBundle::default());
 
     // Player
@@ -28,34 +39,39 @@ fn game_startup(
             material: materials.add(Color::RED.into()),
             ..default()
         },
-        Velocity {
-            x: 0.,
-            y: 0.,
-            x_max: 1000.,
-            y_max: 1000.,
+        Movement {
+            signum_x: 1,
+            signum_y: 1,
+            velocity_x: 0.,
+            velocity_y: 0.,
+            velocity_x_max: MAX_VELOCITY,
+            velocity_y_max: MAX_VELOCITY,
         },
     ));
 
     // Other characters
-    for i in 0..10 {
+    for _i in 0..MAX_ENTITIES {
         let enemy_radius = 10.;
 
         commands.spawn((
             bevy::sprite::MaterialMesh2dBundle {
                 mesh: meshes.add(shape::Circle::new(enemy_radius).into()).into(),
                 material: materials.add(Color::WHITE.into()),
+                // Randomly position element in view
                 transform: Transform::from_translation(Vec3::new(
-                    i as f32 * (enemy_radius + (enemy_radius / 2.)),
-                    0.,
+                    rng.gen_range(-window_half_width..=window_half_width),
+                    rng.gen_range(-window_half_height..=window_half_height),
                     0.,
                 )),
                 ..default()
             },
-            Velocity {
-                x: 0.,
-                y: 0.,
-                x_max: 1000.,
-                y_max: 1000.,
+            Movement {
+                signum_x: 1,
+                signum_y: 1,
+                velocity_x: 0.,
+                velocity_y: 0.,
+                velocity_x_max: MAX_VELOCITY,
+                velocity_y_max: MAX_VELOCITY,
             },
         ));
     }
@@ -83,7 +99,36 @@ fn score_board_startup(mut commands: Commands) {
     ));
 }
 
-const DIRECTION_CHANGE_WEIGHT: f64 = 0.1;
+const DIRECTION_CHANGE_WEIGHT: f64 = 0.05;
+
+fn movement_update(mut character_movement: Query<&mut Movement>) {
+    let mut rng = rand::thread_rng();
+
+    for mut movement in character_movement.iter_mut() {
+        let x_velocity_offset = rng.gen_range(0.0..=movement.velocity_x_max);
+        let y_velocity_offset = rng.gen_range(0.0..=movement.velocity_y_max);
+
+        // Use weighted offset to determine direction
+        if rng.gen_bool(DIRECTION_CHANGE_WEIGHT) {
+            movement.signum_x *= -1;
+        }
+        if rng.gen_bool(DIRECTION_CHANGE_WEIGHT) {
+            movement.signum_y *= -1;
+        }
+
+        // Add speed
+        movement.velocity_x += x_velocity_offset * movement.signum_x as f32;
+        movement.velocity_y += y_velocity_offset * movement.signum_y as f32;
+
+        // Ensure velocity is within bounds while maintaining direction
+        if movement.velocity_x.abs() >= movement.velocity_x_max {
+            movement.velocity_x = movement.velocity_x_max * movement.velocity_x.signum();
+        }
+        if movement.velocity_y.abs() >= movement.velocity_y_max {
+            movement.velocity_y = movement.velocity_y_max * movement.velocity_y.signum();
+        }
+    }
+}
 
 fn main() {
     App::new()
@@ -91,39 +136,19 @@ fn main() {
         .add_systems(Startup, (game_startup, score_board_startup))
         .add_systems(
             FixedUpdate,
-            |mut character_transforms: Query<(&mut Transform, &mut Velocity)>,
-             time_step: Res<FixedTime>| {
-                let mut rng = rand::thread_rng();
-
-                for (mut transform, mut velocity) in character_transforms.iter_mut() {
-                    let x_velocity_offset = rng.gen_range(-velocity.x_max..=velocity.x_max);
-                    let y_velocity_offset = rng.gen_range(-velocity.x_max..=velocity.y_max);
-
-                    // Use weighted offset to determine direction
-                    if rng.gen_bool(DIRECTION_CHANGE_WEIGHT) {
-                        velocity.x = -x_velocity_offset;
-                    } else {
-                        velocity.x = x_velocity_offset;
+            (
+                movement_update,
+                |mut character_transforms: Query<(&mut Transform, &mut Movement)>,
+                 time_step: Res<FixedTime>| {
+                    for (mut transform, velocity) in character_transforms.iter_mut() {
+                        // Move character around randomly
+                        transform.translation.x +=
+                            velocity.velocity_x * time_step.period.as_secs_f32();
+                        transform.translation.y +=
+                            velocity.velocity_y * time_step.period.as_secs_f32();
                     }
-                    if rng.gen_bool(DIRECTION_CHANGE_WEIGHT) {
-                        velocity.y = -y_velocity_offset;
-                    } else {
-                        velocity.y = y_velocity_offset;
-                    }
-
-                    // Ensure velocity is within bounds while maintaining direction
-                    if velocity.x.abs() >= velocity.x_max {
-                        velocity.x = velocity.x_max * velocity.x.signum();
-                    }
-                    if velocity.y.abs() >= velocity.y_max {
-                        velocity.y = velocity.y_max * velocity.y.signum();
-                    }
-
-                    // Move character around randomly
-                    transform.translation.x += velocity.x * time_step.period.as_secs_f32();
-                    transform.translation.y += velocity.y * time_step.period.as_secs_f32();
-                }
-            },
+                },
+            ),
         )
         .run();
 }
