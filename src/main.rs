@@ -1,4 +1,5 @@
-use bevy::prelude::*;
+use bevy::{prelude::*, sprite::MaterialMesh2dBundle};
+
 use rand::Rng;
 
 // Score component
@@ -16,10 +17,16 @@ struct Movement {
     velocity_y_max: f32,
 }
 
+#[derive(Component)]
+struct Mutations {
+    controlled_movement: bool,
+}
+
 const MAX_ENTITIES: usize = 500;
 const MAX_VELOCITY: f32 = 10.;
 
-fn game_startup(
+// Startup functions
+fn startup_game(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
@@ -34,7 +41,7 @@ fn game_startup(
 
     // Player
     commands.spawn((
-        bevy::sprite::MaterialMesh2dBundle {
+        MaterialMesh2dBundle {
             mesh: meshes.add(shape::Circle::new(12.).into()).into(),
             material: materials.add(Color::RED.into()),
             ..default()
@@ -47,6 +54,9 @@ fn game_startup(
             velocity_x_max: MAX_VELOCITY,
             velocity_y_max: MAX_VELOCITY,
         },
+        Mutations {
+            controlled_movement: false,
+        },
     ));
 
     // Other characters
@@ -54,7 +64,7 @@ fn game_startup(
         let enemy_radius = 10.;
 
         commands.spawn((
-            bevy::sprite::MaterialMesh2dBundle {
+            MaterialMesh2dBundle {
                 mesh: meshes.add(shape::Circle::new(enemy_radius).into()).into(),
                 material: materials.add(Color::WHITE.into()),
                 // Randomly position element in view
@@ -77,7 +87,7 @@ fn game_startup(
     }
 }
 
-fn score_board_startup(mut commands: Commands) {
+fn startup_score_board(mut commands: Commands) {
     commands.spawn((
         TextBundle {
             text: Text {
@@ -99,9 +109,46 @@ fn score_board_startup(mut commands: Commands) {
     ));
 }
 
+#[derive(Component, Debug)]
+enum Mutation {
+    ControlledMovement,
+}
+
+#[derive(Component)]
+struct MutationsMenu;
+
+fn startup_trait_card(mut commands: Commands) {
+    commands
+        .spawn((
+            ButtonBundle {
+                background_color: BackgroundColor(Color::BLUE),
+                ..default()
+            },
+            MutationsMenu,
+            Mutation::ControlledMovement,
+        ))
+        .with_children(|parent| {
+            parent.spawn(TextBundle {
+                text: Text {
+                    sections: vec![TextSection::new(
+                        format!("Trait"),
+                        TextStyle {
+                            color: Color::WHITE,
+                            ..default()
+                        },
+                    )],
+                    ..default()
+                },
+                transform: Transform::from_translation(Vec3::new(0., 0., 2.)),
+                ..default()
+            });
+        });
+}
+
 const DIRECTION_CHANGE_WEIGHT: f64 = 0.05;
 
-fn movement_update(mut character_movement: Query<&mut Movement>) {
+// Update functions
+fn update_movement(mut character_movement: Query<&mut Movement>) {
     let mut rng = rand::thread_rng();
 
     for mut movement in character_movement.iter_mut() {
@@ -130,25 +177,63 @@ fn movement_update(mut character_movement: Query<&mut Movement>) {
     }
 }
 
+fn update_entity_movement(
+    mut character_transforms: Query<(&mut Transform, &mut Movement)>,
+    time_step: Res<FixedTime>,
+) {
+    for (mut transform, velocity) in character_transforms.iter_mut() {
+        // Move character around randomly
+        transform.translation.x += velocity.velocity_x * time_step.period.as_secs_f32();
+        transform.translation.y += velocity.velocity_y * time_step.period.as_secs_f32();
+    }
+}
+
+fn handle_mouse_input(
+    button_interaction: Query<(&Interaction, &Mutation), (Changed<Interaction>, With<Button>)>,
+    mut entity_mutations: Query<&mut Mutations>,
+    mut next_app_state: ResMut<NextState<AppState>>,
+) {
+    for (interaction, mutation) in button_interaction.iter() {
+        println!("Interaction: {:?}, Mutation: {:?}", interaction, mutation);
+
+        match *interaction {
+            Interaction::Pressed => match mutation {
+                Mutation::ControlledMovement => {
+                    println!("Selecting Controlled movement");
+                    entity_mutations
+                        .get_single_mut()
+                        .unwrap()
+                        .controlled_movement = true;
+                    next_app_state.set(AppState::Game);
+                }
+            },
+            _ => {}
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq, States)]
+enum AppState {
+    #[default]
+    Menu,
+    Game,
+}
+
+fn destroy_trait_card(mut commands: Commands, trait_menu: Query<Entity, With<MutationsMenu>>) {
+    for entity in trait_menu.iter() {
+        println!("Destroying trait card");
+        commands.entity(entity).despawn_recursive();
+    }
+}
+
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
-        .add_systems(Startup, (game_startup, score_board_startup))
-        .add_systems(
-            FixedUpdate,
-            (
-                movement_update,
-                |mut character_transforms: Query<(&mut Transform, &mut Movement)>,
-                 time_step: Res<FixedTime>| {
-                    for (mut transform, velocity) in character_transforms.iter_mut() {
-                        // Move character around randomly
-                        transform.translation.x +=
-                            velocity.velocity_x * time_step.period.as_secs_f32();
-                        transform.translation.y +=
-                            velocity.velocity_y * time_step.period.as_secs_f32();
-                    }
-                },
-            ),
-        )
+        .add_state::<AppState>()
+        .add_systems(Startup, (startup_game, startup_score_board))
+        .add_systems(OnEnter(AppState::Menu), startup_trait_card)
+        .add_systems(Update, handle_mouse_input.run_if(in_state(AppState::Menu)))
+        .add_systems(OnExit(AppState::Menu), destroy_trait_card)
+        .add_systems(FixedUpdate, (update_movement, update_entity_movement))
         .run();
 }
