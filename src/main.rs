@@ -1,13 +1,13 @@
 use bevy::{prelude::*, sprite::MaterialMesh2dBundle};
-
-use rand::Rng;
+use mutations::*;
+use rand::{rngs::ThreadRng, Rng};
 
 // Score component
 #[derive(Component)]
 struct Score(i32);
 
 // Velocity component
-#[derive(Component)]
+#[derive(Component, Debug)]
 struct Movement {
     signum_x: i8,
     signum_y: i8,
@@ -49,7 +49,7 @@ fn startup_game(
             velocity_x_max: MAX_VELOCITY,
             velocity_y_max: MAX_VELOCITY,
         },
-        mutations::Mutations {
+        Mutations {
             controlled_movement: false,
         },
     ));
@@ -106,33 +106,37 @@ fn startup_score_board(mut commands: Commands) {
 
 const DIRECTION_CHANGE_WEIGHT: f64 = 0.05;
 
+fn calculate_jitter(rng: &mut ThreadRng, movement: &mut Movement) {
+    let x_velocity_offset = rng.gen_range(0.0..=movement.velocity_x_max);
+    let y_velocity_offset = rng.gen_range(0.0..=movement.velocity_y_max);
+
+    // Use weighted offset to determine direction
+    if rng.gen_bool(DIRECTION_CHANGE_WEIGHT) {
+        movement.signum_x *= -1;
+    }
+    if rng.gen_bool(DIRECTION_CHANGE_WEIGHT) {
+        movement.signum_y *= -1;
+    }
+
+    // Add speed
+    movement.velocity_x += x_velocity_offset * movement.signum_x as f32;
+    movement.velocity_y += y_velocity_offset * movement.signum_y as f32;
+
+    // Ensure velocity is within bounds while maintaining direction
+    if movement.velocity_x.abs() >= movement.velocity_x_max {
+        movement.velocity_x = movement.velocity_x_max * movement.velocity_x.signum();
+    }
+    if movement.velocity_y.abs() >= movement.velocity_y_max {
+        movement.velocity_y = movement.velocity_y_max * movement.velocity_y.signum();
+    }
+}
+
 // Update functions
-fn update_movement(mut character_movement: Query<&mut Movement>) {
+fn update_inert_jitter_velocity(mut character_movement: Query<&mut Movement, Without<Mutations>>) {
     let mut rng = rand::thread_rng();
 
     for mut movement in character_movement.iter_mut() {
-        let x_velocity_offset = rng.gen_range(0.0..=movement.velocity_x_max);
-        let y_velocity_offset = rng.gen_range(0.0..=movement.velocity_y_max);
-
-        // Use weighted offset to determine direction
-        if rng.gen_bool(DIRECTION_CHANGE_WEIGHT) {
-            movement.signum_x *= -1;
-        }
-        if rng.gen_bool(DIRECTION_CHANGE_WEIGHT) {
-            movement.signum_y *= -1;
-        }
-
-        // Add speed
-        movement.velocity_x += x_velocity_offset * movement.signum_x as f32;
-        movement.velocity_y += y_velocity_offset * movement.signum_y as f32;
-
-        // Ensure velocity is within bounds while maintaining direction
-        if movement.velocity_x.abs() >= movement.velocity_x_max {
-            movement.velocity_x = movement.velocity_x_max * movement.velocity_x.signum();
-        }
-        if movement.velocity_y.abs() >= movement.velocity_y_max {
-            movement.velocity_y = movement.velocity_y_max * movement.velocity_y.signum();
-        }
+        calculate_jitter(&mut rng, &mut movement);
     }
 }
 
@@ -175,7 +179,7 @@ mod mutations {
         ControlledMovement,
     }
 
-    pub struct MenuPlugin;
+    pub struct MutationsMenuPlugin;
 
     fn startup_trait_card(mut commands: Commands) {
         commands
@@ -236,7 +240,7 @@ mod mutations {
         }
     }
 
-    impl Plugin for MenuPlugin {
+    impl Plugin for MutationsMenuPlugin {
         fn build(&self, app: &mut App) {
             app.add_systems(OnEnter(AppState::Menu), startup_trait_card)
                 .add_systems(Update, handle_mouse_input.run_if(in_state(AppState::Menu)))
@@ -245,11 +249,68 @@ mod mutations {
     }
 }
 
+fn update_keyboard_movement(
+    keyboard_input: Res<Input<KeyCode>>,
+    mutations: Query<&mut Mutations>,
+    mut velocity: Query<&mut Movement, With<Mutations>>,
+) {
+    match mutations.get_single() {
+        Ok(player_mutations) => {
+            if !player_mutations.controlled_movement {
+                return;
+            }
+
+            let mut player_velocity = velocity.get_single_mut().unwrap();
+
+            println!("Old velocity: {:?}", player_velocity);
+
+            if keyboard_input.pressed(KeyCode::Left) {
+                player_velocity.velocity_x -= 1.;
+            }
+            if keyboard_input.pressed(KeyCode::Right) {
+                player_velocity.velocity_x += 1.;
+            }
+            if keyboard_input.pressed(KeyCode::Up) {
+                player_velocity.velocity_y += 1.;
+            }
+            if keyboard_input.pressed(KeyCode::Down) {
+                player_velocity.velocity_y -= 1.;
+            }
+            println!("New velocity: {:?}", player_velocity);
+        }
+        Err(_) => {
+            println!("No entity with mutations found");
+            return;
+        }
+    }
+    if mutations.get_single().unwrap().controlled_movement {}
+}
+
+fn update_mutant_jitter_velocity(mut character_movement: Query<(&mut Movement, &Mutations)>) {
+    let mut rng = rand::thread_rng();
+
+    for (mut movement, entity_mutations) in character_movement.iter_mut() {
+        if entity_mutations.controlled_movement {
+            continue;
+        }
+
+        calculate_jitter(&mut rng, &mut movement);
+    }
+}
+
 fn main() {
     App::new()
-        .add_plugins((DefaultPlugins, mutations::MenuPlugin))
+        .add_plugins((DefaultPlugins, mutations::MutationsMenuPlugin))
         .add_state::<crate::app_state::AppState>()
         .add_systems(Startup, (startup_game, startup_score_board))
-        .add_systems(FixedUpdate, (update_movement, update_entity_movement))
+        .add_systems(
+            FixedUpdate,
+            (
+                update_inert_jitter_velocity,
+                update_mutant_jitter_velocity,
+                update_keyboard_movement,
+                update_entity_movement,
+            ),
+        )
         .run();
 }
