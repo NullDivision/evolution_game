@@ -17,11 +17,6 @@ struct Movement {
     velocity_y_max: f32,
 }
 
-#[derive(Component)]
-struct Mutations {
-    controlled_movement: bool,
-}
-
 const MAX_ENTITIES: usize = 500;
 const MAX_VELOCITY: f32 = 10.;
 
@@ -54,7 +49,7 @@ fn startup_game(
             velocity_x_max: MAX_VELOCITY,
             velocity_y_max: MAX_VELOCITY,
         },
-        Mutations {
+        mutations::Mutations {
             controlled_movement: false,
         },
     ));
@@ -109,42 +104,6 @@ fn startup_score_board(mut commands: Commands) {
     ));
 }
 
-#[derive(Component, Debug)]
-enum Mutation {
-    ControlledMovement,
-}
-
-#[derive(Component)]
-struct MutationsMenu;
-
-fn startup_trait_card(mut commands: Commands) {
-    commands
-        .spawn((
-            ButtonBundle {
-                background_color: BackgroundColor(Color::BLUE),
-                ..default()
-            },
-            MutationsMenu,
-            Mutation::ControlledMovement,
-        ))
-        .with_children(|parent| {
-            parent.spawn(TextBundle {
-                text: Text {
-                    sections: vec![TextSection::new(
-                        format!("Trait"),
-                        TextStyle {
-                            color: Color::WHITE,
-                            ..default()
-                        },
-                    )],
-                    ..default()
-                },
-                transform: Transform::from_translation(Vec3::new(0., 0., 2.)),
-                ..default()
-            });
-        });
-}
-
 const DIRECTION_CHANGE_WEIGHT: f64 = 0.05;
 
 // Update functions
@@ -188,52 +147,109 @@ fn update_entity_movement(
     }
 }
 
-fn handle_mouse_input(
-    button_interaction: Query<(&Interaction, &Mutation), (Changed<Interaction>, With<Button>)>,
-    mut entity_mutations: Query<&mut Mutations>,
-    mut next_app_state: ResMut<NextState<AppState>>,
-) {
-    for (interaction, mutation) in button_interaction.iter() {
-        println!("Interaction: {:?}, Mutation: {:?}", interaction, mutation);
+mod app_state {
+    use bevy::prelude::*;
 
-        match *interaction {
-            Interaction::Pressed => match mutation {
-                Mutation::ControlledMovement => {
-                    println!("Selecting Controlled movement");
-                    entity_mutations
-                        .get_single_mut()
-                        .unwrap()
-                        .controlled_movement = true;
-                    next_app_state.set(AppState::Game);
-                }
-            },
-            _ => {}
-        }
+    #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq, States)]
+    pub enum AppState {
+        #[default]
+        Menu,
+        Game,
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq, States)]
-enum AppState {
-    #[default]
-    Menu,
-    Game,
-}
+mod mutations {
+    use crate::app_state::AppState;
+    use bevy::prelude::*;
 
-fn destroy_trait_card(mut commands: Commands, trait_menu: Query<Entity, With<MutationsMenu>>) {
-    for entity in trait_menu.iter() {
-        println!("Destroying trait card");
-        commands.entity(entity).despawn_recursive();
+    #[derive(Component)]
+    struct MutationsMenu;
+
+    #[derive(Component)]
+    pub struct Mutations {
+        pub controlled_movement: bool,
+    }
+
+    #[derive(Component, Debug)]
+    enum Mutation {
+        ControlledMovement,
+    }
+
+    pub struct MenuPlugin;
+
+    fn startup_trait_card(mut commands: Commands) {
+        commands
+            .spawn((
+                ButtonBundle {
+                    background_color: BackgroundColor(Color::BLUE),
+                    ..default()
+                },
+                MutationsMenu,
+                Mutation::ControlledMovement,
+            ))
+            .with_children(|parent| {
+                parent.spawn(TextBundle {
+                    text: Text {
+                        sections: vec![TextSection::new(
+                            format!("Trait"),
+                            TextStyle {
+                                color: Color::WHITE,
+                                ..default()
+                            },
+                        )],
+                        ..default()
+                    },
+                    transform: Transform::from_translation(Vec3::new(0., 0., 2.)),
+                    ..default()
+                });
+            });
+    }
+
+    fn handle_mouse_input(
+        button_interaction: Query<(&Interaction, &Mutation), (Changed<Interaction>, With<Button>)>,
+        mut entity_mutations: Query<&mut Mutations>,
+        mut next_app_state: ResMut<NextState<AppState>>,
+    ) {
+        for (interaction, mutation) in button_interaction.iter() {
+            println!("Interaction: {:?}, Mutation: {:?}", interaction, mutation);
+
+            match *interaction {
+                Interaction::Pressed => match mutation {
+                    Mutation::ControlledMovement => {
+                        println!("Selecting Controlled movement");
+                        entity_mutations
+                            .get_single_mut()
+                            .unwrap()
+                            .controlled_movement = true;
+                        next_app_state.set(AppState::Game);
+                    }
+                },
+                _ => {}
+            }
+        }
+    }
+
+    fn destroy_trait_card(mut commands: Commands, trait_menu: Query<Entity, With<MutationsMenu>>) {
+        for entity in trait_menu.iter() {
+            println!("Destroying trait card");
+            commands.entity(entity).despawn_recursive();
+        }
+    }
+
+    impl Plugin for MenuPlugin {
+        fn build(&self, app: &mut App) {
+            app.add_systems(OnEnter(AppState::Menu), startup_trait_card)
+                .add_systems(Update, handle_mouse_input.run_if(in_state(AppState::Menu)))
+                .add_systems(OnExit(AppState::Menu), destroy_trait_card);
+        }
     }
 }
 
 fn main() {
     App::new()
-        .add_plugins(DefaultPlugins)
-        .add_state::<AppState>()
+        .add_plugins((DefaultPlugins, mutations::MenuPlugin))
+        .add_state::<crate::app_state::AppState>()
         .add_systems(Startup, (startup_game, startup_score_board))
-        .add_systems(OnEnter(AppState::Menu), startup_trait_card)
-        .add_systems(Update, handle_mouse_input.run_if(in_state(AppState::Menu)))
-        .add_systems(OnExit(AppState::Menu), destroy_trait_card)
         .add_systems(FixedUpdate, (update_movement, update_entity_movement))
         .run();
 }
