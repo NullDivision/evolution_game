@@ -1,5 +1,7 @@
-use bevy::prelude::Component;
+use bevy::prelude::*;
 use rand::{rngs::ThreadRng, Rng};
+
+use crate::mutations::Mutations;
 
 // Velocity component
 #[derive(Component, Debug)]
@@ -13,7 +15,44 @@ pub struct Movement {
 }
 
 const MAX_VELOCITY: f32 = 10.;
-const DIRECTION_CHANGE_WEIGHT: f64 = 0.05;
+const DIRECTION_CHANGE_WEIGHT: f64 = 0.03;
+const DECELERATION: f32 = 0.5;
+
+fn apply_deceleration(velocity: &mut Movement) {
+    if velocity.velocity_x > 0. {
+        velocity.velocity_x -= DECELERATION;
+    } else if velocity.velocity_x < 0. {
+        velocity.velocity_x += DECELERATION;
+    }
+
+    if velocity.velocity_y > 0. {
+        velocity.velocity_y -= DECELERATION;
+    } else if velocity.velocity_y < 0. {
+        velocity.velocity_y += DECELERATION;
+    }
+}
+
+pub fn build_keyboard_movement(
+    keyboard_input: Res<Input<KeyCode>>,
+    mut velocity: Query<&mut Movement, With<Mutations>>,
+) {
+    let mut player_velocity = velocity.get_single_mut().unwrap();
+
+    if keyboard_input.pressed(KeyCode::Left) {
+        player_velocity.velocity_x -= 1.;
+    }
+    if keyboard_input.pressed(KeyCode::Right) {
+        player_velocity.velocity_x += 1.;
+    }
+    if keyboard_input.pressed(KeyCode::Up) {
+        player_velocity.velocity_y += 1.;
+    }
+    if keyboard_input.pressed(KeyCode::Down) {
+        player_velocity.velocity_y -= 1.;
+    }
+
+    apply_deceleration(&mut player_velocity);
+}
 
 pub fn build_movement() -> Movement {
     Movement {

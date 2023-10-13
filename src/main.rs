@@ -107,7 +107,7 @@ fn update_entity_movement(
 fn update_keyboard_movement(
     keyboard_input: Res<Input<KeyCode>>,
     mutations: Query<&mut Mutations>,
-    mut velocity: Query<&mut Movement, With<Mutations>>,
+    velocity: Query<&mut Movement, With<Mutations>>,
 ) {
     match mutations.get_single() {
         Ok(player_mutations) => {
@@ -115,23 +115,7 @@ fn update_keyboard_movement(
                 return;
             }
 
-            let mut player_velocity = velocity.get_single_mut().unwrap();
-
-            println!("Old velocity: {:?}", player_velocity);
-
-            if keyboard_input.pressed(KeyCode::Left) {
-                player_velocity.velocity_x -= 1.;
-            }
-            if keyboard_input.pressed(KeyCode::Right) {
-                player_velocity.velocity_x += 1.;
-            }
-            if keyboard_input.pressed(KeyCode::Up) {
-                player_velocity.velocity_y += 1.;
-            }
-            if keyboard_input.pressed(KeyCode::Down) {
-                player_velocity.velocity_y -= 1.;
-            }
-            println!("New velocity: {:?}", player_velocity);
+            build_keyboard_movement(keyboard_input, velocity);
         }
         Err(_) => {
             println!("No entity with mutations found");
@@ -152,9 +136,33 @@ fn update_mutant_jitter_velocity(mut character_movement: Query<(&mut Movement, &
     }
 }
 
+fn detect_collisions(
+    mut commands: Commands,
+    player: Query<&Transform, With<Mutations>>,
+    npcs: Query<(Entity, &Transform), (&Movement, Without<Mutations>)>,
+    mut score_board: Query<(&mut Text, &mut Score)>,
+) {
+    let player_transform = player.single();
+
+    for (npc, npc_transform) in npcs.iter() {
+        let distance = player_transform
+            .translation
+            .distance(npc_transform.translation);
+
+        if distance < 20. {
+            commands.entity(npc).despawn_recursive();
+
+            let (mut text, mut score) = score_board.get_single_mut().unwrap();
+
+            score.0 += 1;
+            text.sections[0].value = format!("Score: {}", score.0);
+        }
+    }
+}
+
 fn main() {
     App::new()
-        .add_plugins((DefaultPlugins, mutations::MutationsMenuPlugin))
+        .add_plugins((DefaultPlugins, MutationsMenuPlugin))
         .add_state::<AppState>()
         .add_systems(Startup, (startup_game, startup_score_board))
         .add_systems(
@@ -164,6 +172,7 @@ fn main() {
                 update_mutant_jitter_velocity,
                 update_keyboard_movement,
                 update_entity_movement,
+                detect_collisions,
             ),
         )
         .run();
