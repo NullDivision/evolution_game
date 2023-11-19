@@ -4,7 +4,7 @@ mod state;
 
 use bevy::{
     prelude::*,
-    sprite::MaterialMesh2dBundle,
+    sprite::{MaterialMesh2dBundle, Material2d}, render::color,
 };
 use movement::*;
 use mutations::*;
@@ -13,16 +13,14 @@ use state::*;
 
 const MAX_ENTITIES: usize = 500;
 
-#[derive(Event)]
-struct CollisionEvent {
-    host: Entity,
-    target: Entity,
-}
-
 #[derive(Component)]
-struct Weight {
-    max: f32,
-    value: f32,
+struct Weight(f32);
+
+#[derive(Bundle)]
+struct Creature {
+    movement: Movement,
+    sprite: MaterialMesh2dBundle<ColorMaterial>,
+    weight: Weight,
 }
 
 // Startup functions
@@ -39,40 +37,46 @@ fn startup_game(
 
     commands.spawn(Camera2dBundle::default());
 
+    let player_radius = 1.;
+
     // Player
     commands.spawn((
-        MaterialMesh2dBundle {
-            mesh: meshes.add(shape::Circle::new(10.).into()).into(),
-            material: materials.add(Color::RED.into()),
-            ..default()
+        Creature {
+            movement: build_movement(),
+            sprite:  MaterialMesh2dBundle {
+                mesh: meshes.add(shape::Circle::new(10.).into()).into(),
+                material: materials.add(Color::RED.into()),
+                ..default()
+
+
+            },
+            weight: Weight(player_radius),
         },
-        build_movement(),
         Mutations {
             controlled_movement: false,
-        },
-        Weight {
-            max: 100.,
-            value: 12.,
         },
     ));
 
     // Other characters
     for _i in 0..MAX_ENTITIES {
-        let enemy_radius = 10.;
+        let enemy_radius = 1.;
 
         commands.spawn((
-            MaterialMesh2dBundle {
-                mesh: meshes.add(shape::Circle::new(enemy_radius).into()).into(),
-                material: materials.add(Color::WHITE.into()),
-                // Randomly position element in view
-                transform: Transform::from_translation(Vec3::new(
-                    rng.gen_range(-window_half_width..=window_half_width),
-                    rng.gen_range(-window_half_height..=window_half_height),
-                    0.,
-                )),
-                ..default()
+            Creature {
+                movement: build_movement(),
+                sprite: MaterialMesh2dBundle {
+                    mesh: meshes.add(shape::Circle::new(10.).into()).into(),
+                    material: materials.add(Color::WHITE.into()),
+                    // Randomly position element in view
+                    transform: Transform::from_translation(Vec3::new(
+                            rng.gen_range(-window_half_width..=window_half_width),
+                            rng.gen_range(-window_half_height..=window_half_height),
+                            0.,
+                            )),
+                            ..default()
+                },
+                weight: Weight(enemy_radius),
             },
-            build_movement(),
         ));
     }
 }
@@ -101,7 +105,7 @@ fn update_keyboard_movement(
     keyboard_input: Res<Input<KeyCode>>,
     mutations: Query<&mut Mutations>,
     velocity: Query<&mut Movement, With<Mutations>>,
-) {
+    ) {
     match mutations.get_single() {
         Ok(player_mutations) => {
             if !player_mutations.controlled_movement {
@@ -130,35 +134,31 @@ fn update_mutant_jitter_velocity(mut character_movement: Query<(&mut Movement, &
 }
 
 fn detect_collisions(
-    player: Query<(&Transform, Entity), With<Mutations>>,
-    npcs: Query<(Entity, &Transform), (&Movement, Without<Mutations>)>,
-    mut collision_event: EventWriter<CollisionEvent>,
+    mut commands: Commands,
+    mut player: Query<(&mut Transform, &mut Weight), With<Mutations>>,
+    npcs: Query<(&Transform, &Weight, Entity), (&Movement, Without<Mutations>)>,
 ) {
-    let (player_transform, player_entity) = player.single();
-    let mut events = Vec::new();
+    let (mut player_transform, mut player_weight) = player.single_mut();
 
-    for (npc, npc_transform) in npcs.iter() {
+    for (npc_transform, npc_weight, npc) in npcs.iter() {
         let distance = player_transform
             .translation
             .distance(npc_transform.translation);
 
-        if distance < 20. {
-            events.push(CollisionEvent {
-                host: player_entity,
-                target: npc,
-            });
-        }
-    }
+        println!("{:?}", player_transform.scale);
+        if distance < (10. * player_weight.0) {
+            // Player weight goes up based on enemy weight consumed
+            player_weight.0 += npc_weight.0 / player_weight.0; 
+            player_transform.scale = Transform::from_scale(Vec3::splat(player_weight.0)).scale;
 
-    if events.len() > 0 {
-        collision_event.send_batch(events);
+            commands.entity(npc).despawn();
+        }
     }
 }
 
 fn main() {
     App::new()
         .add_plugins((DefaultPlugins, MutationsMenuPlugin))
-        .add_event::<CollisionEvent>()
         .add_state::<AppState>()
         .add_systems(Startup, startup_game)
         .add_systems(
