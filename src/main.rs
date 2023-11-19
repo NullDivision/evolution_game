@@ -155,11 +155,17 @@ fn detect_collisions(
     }
 }
 
-fn update_camera_position(mut camera: Query<&mut OrthographicProjection, With<Camera>>, player: Query<&Weight, With<Mutations>>) {
-    let player_weight = player.single().0;
-    let mut camera_transform = camera.single_mut();
+fn update_camera_position(
+    mut camera: Query<(&mut OrthographicProjection, &mut Transform), With<Camera>>,
+    player: Query<(&Weight, &Transform), (With<Mutations>, Without<Camera>)>
+) {
+    let (player_weight, player_transform) = player.single();
 
-    camera_transform.scale = player_weight * 0.05;
+    let (mut projection, mut camera_transform) = camera.single_mut();
+
+    camera_transform.translation.x = player_transform.translation.x;
+    camera_transform.translation.y = player_transform.translation.y;
+    projection.scale = player_weight.0 * 0.5;
 }
 
 fn main() {
