@@ -4,7 +4,7 @@ mod state;
 
 use bevy::{
     prelude::*,
-    sprite::{MaterialMesh2dBundle, Material2d}, render::color,
+    sprite::MaterialMesh2dBundle,
 };
 use movement::*;
 use mutations::*;
