@@ -8,7 +8,7 @@ use bevy::{
 };
 use movement::*;
 use mutations::*;
-use rand::Rng;
+use rand::{Rng, rngs::ThreadRng};
 use state::*;
 
 const MAX_ENTITIES: usize = 500;
@@ -21,6 +21,15 @@ struct Creature {
     movement: Movement,
     sprite: MaterialMesh2dBundle<ColorMaterial>,
     weight: Weight,
+}
+
+fn get_offscreen_render_location(viewport: Rect, range: &mut ThreadRng) -> Vec3 {
+    let mut entity_location = Vec3::default();
+
+    entity_location.x = range.gen_range(viewport.min.x..=viewport.max.x);
+    entity_location.y = range.gen_range(viewport.min.y..=viewport.max.y);
+
+    entity_location
 }
 
 // Startup functions
@@ -105,7 +114,7 @@ fn update_keyboard_movement(
     keyboard_input: Res<Input<KeyCode>>,
     mutations: Query<&mut Mutations>,
     velocity: Query<&mut Movement, With<Mutations>>,
-    ) {
+) {
     match mutations.get_single() {
         Ok(player_mutations) => {
             if !player_mutations.controlled_movement {
@@ -133,14 +142,15 @@ fn update_mutant_jitter_velocity(mut character_movement: Query<(&mut Movement, &
     }
 }
 
-fn detect_collisions(
-    mut commands: Commands,
+fn handle_collisions(
     mut player: Query<(&mut Transform, &mut Weight), With<Mutations>>,
-    npcs: Query<(&Transform, &Weight, Entity), (&Movement, Without<Mutations>)>,
+    mut npcs: Query<(&mut Transform, &Weight), (&Movement, Without<Mutations>)>,
+    projection: Query<&OrthographicProjection, With<Camera>>,
 ) {
     let (mut player_transform, mut player_weight) = player.single_mut();
+    let mut rng = rand::thread_rng();
 
-    for (npc_transform, npc_weight, npc) in npcs.iter() {
+    for (mut npc_transform, npc_weight) in npcs.iter_mut() {
         let distance = player_transform
             .translation
             .distance(npc_transform.translation);
@@ -150,7 +160,8 @@ fn detect_collisions(
             player_weight.0 += npc_weight.0 / player_weight.0; 
             player_transform.scale = Transform::from_scale(Vec3::splat(player_weight.0)).scale;
 
-            commands.entity(npc).despawn();
+            // Move entity off screen
+            npc_transform.translation = get_offscreen_render_location(projection.single().area, &mut rng);
         }
     }
 }
@@ -181,7 +192,7 @@ fn main() {
                 update_keyboard_movement,
                 update_entity_movement,
                 update_camera_position,
-                detect_collisions,
+                handle_collisions,
             ),
         )
         .run();
