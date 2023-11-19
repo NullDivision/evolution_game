@@ -145,7 +145,6 @@ fn detect_collisions(
             .translation
             .distance(npc_transform.translation);
 
-        println!("{:?}", player_transform.scale);
         if distance < (10. * player_weight.0) {
             // Player weight goes up based on enemy weight consumed
             player_weight.0 += npc_weight.0 / player_weight.0; 
@@ -154,6 +153,13 @@ fn detect_collisions(
             commands.entity(npc).despawn();
         }
     }
+}
+
+fn update_camera_position(mut camera: Query<&mut OrthographicProjection, With<Camera>>, player: Query<&Weight, With<Mutations>>) {
+    let player_weight = player.single().0;
+    let mut camera_transform = camera.single_mut();
+
+    camera_transform.scale = player_weight * 0.05;
 }
 
 fn main() {
@@ -168,6 +174,7 @@ fn main() {
                 update_mutant_jitter_velocity,
                 update_keyboard_movement,
                 update_entity_movement,
+                update_camera_position,
                 detect_collisions,
             ),
         )
