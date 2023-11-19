@@ -2,17 +2,28 @@ mod movement;
 mod mutations;
 mod state;
 
-use bevy::{prelude::*, sprite::MaterialMesh2dBundle};
+use bevy::{
+    prelude::*,
+    sprite::MaterialMesh2dBundle,
+};
 use movement::*;
 use mutations::*;
 use rand::Rng;
 use state::*;
 
-// Score component
-#[derive(Component)]
-struct Score(i32);
-
 const MAX_ENTITIES: usize = 500;
+
+#[derive(Event)]
+struct CollisionEvent {
+    host: Entity,
+    target: Entity,
+}
+
+#[derive(Component)]
+struct Weight {
+    max: f32,
+    value: f32,
+}
 
 // Startup functions
 fn startup_game(
@@ -31,13 +42,17 @@ fn startup_game(
     // Player
     commands.spawn((
         MaterialMesh2dBundle {
-            mesh: meshes.add(shape::Circle::new(12.).into()).into(),
+            mesh: meshes.add(shape::Circle::new(10.).into()).into(),
             material: materials.add(Color::RED.into()),
             ..default()
         },
         build_movement(),
         Mutations {
             controlled_movement: false,
+        },
+        Weight {
+            max: 100.,
+            value: 12.,
         },
     ));
 
@@ -60,28 +75,6 @@ fn startup_game(
             build_movement(),
         ));
     }
-}
-
-fn startup_score_board(mut commands: Commands) {
-    commands.spawn((
-        TextBundle {
-            text: Text {
-                sections: vec![TextSection::new(
-                    format!("Score: {}", 0),
-                    TextStyle { ..default() },
-                )],
-                ..default()
-            },
-            style: Style {
-                position_type: PositionType::Absolute,
-                right: Val::Px(5.),
-                top: Val::Px(5.),
-                ..default()
-            },
-            ..default()
-        },
-        Score(0),
-    ));
 }
 
 // Update functions
@@ -137,12 +130,12 @@ fn update_mutant_jitter_velocity(mut character_movement: Query<(&mut Movement, &
 }
 
 fn detect_collisions(
-    mut commands: Commands,
-    player: Query<&Transform, With<Mutations>>,
+    player: Query<(&Transform, Entity), With<Mutations>>,
     npcs: Query<(Entity, &Transform), (&Movement, Without<Mutations>)>,
-    mut score_board: Query<(&mut Text, &mut Score)>,
+    mut collision_event: EventWriter<CollisionEvent>,
 ) {
-    let player_transform = player.single();
+    let (player_transform, player_entity) = player.single();
+    let mut events = Vec::new();
 
     for (npc, npc_transform) in npcs.iter() {
         let distance = player_transform
@@ -150,21 +143,24 @@ fn detect_collisions(
             .distance(npc_transform.translation);
 
         if distance < 20. {
-            commands.entity(npc).despawn_recursive();
-
-            let (mut text, mut score) = score_board.get_single_mut().unwrap();
-
-            score.0 += 1;
-            text.sections[0].value = format!("Score: {}", score.0);
+            events.push(CollisionEvent {
+                host: player_entity,
+                target: npc,
+            });
         }
+    }
+
+    if events.len() > 0 {
+        collision_event.send_batch(events);
     }
 }
 
 fn main() {
     App::new()
         .add_plugins((DefaultPlugins, MutationsMenuPlugin))
+        .add_event::<CollisionEvent>()
         .add_state::<AppState>()
-        .add_systems(Startup, (startup_game, startup_score_board))
+        .add_systems(Startup, startup_game)
         .add_systems(
             FixedUpdate,
             (
