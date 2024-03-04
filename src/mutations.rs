@@ -49,7 +49,7 @@ fn startup_trait_card(mut commands: Commands) {
                 .with_children(|parent| {
                     parent.spawn(TextBundle {
                         text: Text {
-                            alignment: TextAlignment::Center,
+                            justify: JustifyText::Center,
                             sections: vec![TextSection::new(
                                 format!("Controlled Movement"),
                                 TextStyle {

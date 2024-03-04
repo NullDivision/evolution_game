@@ -3,6 +3,7 @@ mod mutations;
 mod state;
 
 use bevy::{
+    math::primitives::Circle,
     prelude::*,
     sprite::MaterialMesh2dBundle,
 };
@@ -53,8 +54,8 @@ fn startup_game(
         Creature {
             movement: build_movement(),
             sprite:  MaterialMesh2dBundle {
-                mesh: meshes.add(shape::Circle::new(10.).into()).into(),
-                material: materials.add(Color::RED.into()),
+                mesh: meshes.add(Circle::new(10.)).into(),
+                material: materials.add(Color::RED),
                 ..default()
 
 
@@ -74,8 +75,8 @@ fn startup_game(
             Creature {
                 movement: build_movement(),
                 sprite: MaterialMesh2dBundle {
-                    mesh: meshes.add(shape::Circle::new(10.).into()).into(),
-                    material: materials.add(Color::WHITE.into()),
+                    mesh: meshes.add(Circle::new(10.)).into(),
+                    material: materials.add(Color::WHITE),
                     // Randomly position element in view
                     transform: Transform::from_translation(Vec3::new(
                             rng.gen_range(-window_half_width..=window_half_width),
@@ -101,17 +102,17 @@ fn update_inert_jitter_velocity(mut character_movement: Query<&mut Movement, Wit
 
 fn update_entity_movement(
     mut character_transforms: Query<(&mut Transform, &mut Movement)>,
-    time_step: Res<FixedTime>,
+    time_step: Res<Time>,
 ) {
     for (mut transform, velocity) in character_transforms.iter_mut() {
         // Move character around randomly
-        transform.translation.x += velocity.velocity_x * time_step.period.as_secs_f32();
-        transform.translation.y += velocity.velocity_y * time_step.period.as_secs_f32();
+        transform.translation.x += velocity.velocity_x * time_step.elapsed_seconds();
+        transform.translation.y += velocity.velocity_y * time_step.elapsed_seconds();
     }
 }
 
 fn update_keyboard_movement(
-    keyboard_input: Res<Input<KeyCode>>,
+    keyboard_input: Res<ButtonInput<KeyCode>>,
     mutations: Query<&mut Mutations>,
     velocity: Query<&mut Movement, With<Mutations>>,
 ) {
@@ -144,7 +145,7 @@ fn update_mutant_jitter_velocity(mut character_movement: Query<(&mut Movement, &
 
 fn handle_collisions(
     mut player: Query<(&mut Transform, &mut Weight), With<Mutations>>,
-    mut npcs: Query<(&mut Transform, &Weight), (&Movement, Without<Mutations>)>,
+    mut npcs: Query<(&mut Transform, &Weight), (With<Movement>, Without<Mutations>)>,
     projection: Query<&OrthographicProjection, With<Camera>>,
 ) {
     let (mut player_transform, mut player_weight) = player.single_mut();
@@ -157,7 +158,7 @@ fn handle_collisions(
 
         if distance < (10. * player_weight.0) {
             // Player weight goes up based on enemy weight consumed
-            player_weight.0 += npc_weight.0 / player_weight.0; 
+            player_weight.0 += npc_weight.0 / player_weight.0;
             player_transform.scale = Transform::from_scale(Vec3::splat(player_weight.0)).scale;
 
             // Move entity off screen
@@ -182,7 +183,7 @@ fn update_camera_position(
 fn main() {
     App::new()
         .add_plugins((DefaultPlugins, MutationsMenuPlugin))
-        .add_state::<AppState>()
+        .init_state::<AppState>()
         .add_systems(Startup, startup_game)
         .add_systems(
             FixedUpdate,

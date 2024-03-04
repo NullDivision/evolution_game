@@ -33,21 +33,21 @@ fn apply_deceleration(velocity: &mut Movement) {
 }
 
 pub fn build_keyboard_movement(
-    keyboard_input: Res<Input<KeyCode>>,
+    keyboard_input: Res<ButtonInput<KeyCode>>,
     mut velocity: Query<&mut Movement, With<Mutations>>,
 ) {
     let mut player_velocity = velocity.get_single_mut().unwrap();
 
-    if keyboard_input.pressed(KeyCode::Left) {
+    if keyboard_input.pressed(KeyCode::ArrowLeft) {
         player_velocity.velocity_x -= 1.;
     }
-    if keyboard_input.pressed(KeyCode::Right) {
+    if keyboard_input.pressed(KeyCode::ArrowRight) {
         player_velocity.velocity_x += 1.;
     }
-    if keyboard_input.pressed(KeyCode::Up) {
+    if keyboard_input.pressed(KeyCode::ArrowUp) {
         player_velocity.velocity_y += 1.;
     }
-    if keyboard_input.pressed(KeyCode::Down) {
+    if keyboard_input.pressed(KeyCode::ArrowDown) {
         player_velocity.velocity_y -= 1.;
     }
 
